@@ -1,6 +1,7 @@
 import SkipNoticeComponent from "./components/SkipNoticeComponent";
 import Config from "./config";
 import { isSafari, Keybind, keybindEquals, keybindToString, StorageChangesObject } from "./config/config";
+import { getUnsubmittedSegmentKey } from "./config/configUtils";
 import PreviewBar, { PreviewBarSegment } from "./js-components/previewBar";
 import { SkipButtonControlBar } from "./js-components/skipButtonControlBar";
 import { Message, MessageResponse, VoteResponse } from "./messageTypes";
@@ -359,7 +360,7 @@ function messageListener(
             }
 
             if (addedSegments) {
-                Config.local.unsubmittedSegments[getVideoID()] = sponsorTimesSubmitting;
+                Config.local.unsubmittedSegments[getUnsubmittedSegmentKey(getVideoID())] = sponsorTimesSubmitting;
                 Config.forceLocalUpdate("unsubmittedSegments");
 
                 updateSegmentSubmitting();
@@ -805,11 +806,12 @@ function inMuteSegment(currentTime: number, includeOverlap: boolean): boolean {
 /**
  * This makes sure the videoID is still correct and if the sponsorTime is included
  */
-async function incorrectVideoCheck(videoID?: string, sponsorTime?: SponsorTime): Promise<boolean> {
+async function incorrectVideoCheck(videoID?: VideoID, sponsorTime?: SponsorTime): Promise<boolean> {
     const currentVideoID = await getBilibiliVideoID();
     const recordedVideoID = videoID || getVideoID();
     if (
-        currentVideoID !== recordedVideoID ||
+        // TODO: check cid
+        currentVideoID.bvid !== recordedVideoID.bvid ||
         (sponsorTime &&
             (!sponsorTimes ||
                 !sponsorTimes?.some(
@@ -1136,7 +1138,7 @@ async function sponsorsLookup(keepOldSubmissions = true, ignoreServerCache = fal
     const hashParams = getHashParams();
     if (hashParams.requiredSegment) extraRequestData.requiredSegment = hashParams.requiredSegment;
 
-    const hashPrefix = (await getVideoIDHash(getVideoID())).slice(0, 4) as VideoID & HashedValue;
+    const hashPrefix = (await getVideoIDHash(getVideoID())).slice(0, 4) as HashedValue;
     const response = await getSegmentsByHash(hashPrefix, extraRequestData, ignoreServerCache);
 
     // store last response status
@@ -1251,7 +1253,7 @@ function getEnabledActionTypes(forceFullVideo = false): ActionType[] {
 }
 
 async function lockedCategoriesLookup(): Promise<void> {
-    const hashPrefix = (await getHash(getVideoID(), 1)).slice(0, 4);
+    const hashPrefix = (await getVideoIDHash(getVideoID())).slice(0, 4);
     const response = await asyncRequestToServer("GET", "/api/lockCategories/" + hashPrefix);
 
     if (response.ok) {
@@ -1954,7 +1956,7 @@ function startOrEndTimingNewSegment() {
     }
 
     // Save the newly created segment
-    Config.local.unsubmittedSegments[getVideoID()] = sponsorTimesSubmitting;
+    Config.local.unsubmittedSegments[getUnsubmittedSegmentKey(getVideoID())] = sponsorTimesSubmitting;
     Config.forceLocalUpdate("unsubmittedSegments");
 
     // Make sure they know if someone has already submitted something it while they were watching
@@ -1990,12 +1992,12 @@ function cancelCreatingSegment() {
         if (sponsorTimesSubmitting.length > 1) {
             // If there's more than one segment: remove last
             sponsorTimesSubmitting.pop();
-            Config.local.unsubmittedSegments[getVideoID()] = sponsorTimesSubmitting;
+            Config.local.unsubmittedSegments[getUnsubmittedSegmentKey(getVideoID())] = sponsorTimesSubmitting;
         } else {
             // Otherwise delete the video entry & close submission menu
             resetSponsorSubmissionNotice();
             sponsorTimesSubmitting = [];
-            delete Config.local.unsubmittedSegments[getVideoID()];
+            delete Config.local.unsubmittedSegments[getUnsubmittedSegmentKey(getVideoID())];
         }
         Config.forceLocalUpdate("unsubmittedSegments");
     }
@@ -2005,7 +2007,7 @@ function cancelCreatingSegment() {
 }
 
 function updateSponsorTimesSubmitting(getFromConfig = true) {
-    const segmentTimes = Config.local.unsubmittedSegments[getVideoID()];
+    const segmentTimes = Config.local.unsubmittedSegments[getUnsubmittedSegmentKey(getVideoID())];
 
     //see if this data should be saved in the sponsorTimesSubmitting variable
     if (getFromConfig && segmentTimes != undefined) {
@@ -2090,13 +2092,13 @@ function closeInfoMenu() {
 function clearSponsorTimes() {
     const currentVideoID = getVideoID();
 
-    const sponsorTimes = Config.local.unsubmittedSegments[currentVideoID];
+    const sponsorTimes = Config.local.unsubmittedSegments[getUnsubmittedSegmentKey(currentVideoID) ];
 
     if (sponsorTimes != undefined && sponsorTimes.length > 0) {
         resetSponsorSubmissionNotice();
 
         //clear the sponsor times
-        delete Config.local.unsubmittedSegments[currentVideoID];
+        delete Config.local.unsubmittedSegments[getUnsubmittedSegmentKey(currentVideoID)];
         Config.forceLocalUpdate("unsubmittedSegments");
 
         //clear sponsor times submitting
@@ -2296,7 +2298,7 @@ async function sendSubmitMessage(): Promise<boolean> {
     }
 
     //update sponsorTimes
-    Config.local.unsubmittedSegments[getVideoID()] = sponsorTimesSubmitting;
+    Config.local.unsubmittedSegments[getUnsubmittedSegmentKey(getVideoID())] = sponsorTimesSubmitting;
     Config.forceLocalUpdate("unsubmittedSegments");
 
     // Check to see if any of the submissions are below the minimum duration set
@@ -2324,7 +2326,7 @@ async function sendSubmitMessage(): Promise<boolean> {
         stopAnimation();
 
         // Remove segments from storage since they've already been submitted
-        delete Config.local.unsubmittedSegments[getVideoID()];
+        delete Config.local.unsubmittedSegments[getUnsubmittedSegmentKey(getVideoID())];
         Config.forceLocalUpdate("unsubmittedSegments");
 
         const newSegments = sponsorTimesSubmitting;
@@ -2597,7 +2599,7 @@ function checkForPreloadedSegment() {
     }
 
     if (pushed) {
-        Config.local.unsubmittedSegments[getVideoID()] = sponsorTimesSubmitting;
+        Config.local.unsubmittedSegments[getUnsubmittedSegmentKey(getVideoID())] = sponsorTimesSubmitting;
         Config.forceLocalUpdate("unsubmittedSegments");
     }
 }
